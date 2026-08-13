@@ -118,6 +118,63 @@ target_compile_options(facade_parser PRIVATE -Wall -Wextra)
 add_executable(facade_parser_cli apps/facade_parser_cli.cpp)
 target_link_libraries(facade_parser_cli PRIVATE facade_parser::facade_parser CLI11::CLI11)
 
+# --- GUI (macOS only) -----------------------------------------------------
+# imgui itself is vendored (not fetched) under external/imgui, per the
+# task's instruction to use it from there. GLFW (window/GL-context
+# creation) follows the same system-package-preferred pattern as the
+# other dependencies above; the native Open/Save panels are a small
+# Objective-C++ file (file_dialog_mac.mm), which is why this target is
+# gated to APPLE — porting to another OS would need a different file
+# dialog backend, out of scope here.
+option(FACADE_PARSER_BUILD_GUI "Build the imgui-based GUI application (macOS only)" ON)
+
+if(FACADE_PARSER_BUILD_GUI AND APPLE)
+  enable_language(OBJCXX)
+
+  find_package(glfw3 CONFIG QUIET)
+  if(glfw3_FOUND)
+    message(STATUS "facade_parser: using system GLFW ${glfw3_VERSION}")
+  else()
+    message(STATUS "facade_parser: system GLFW not found, fetching via git")
+    FetchContent_Declare(
+      glfw
+      GIT_REPOSITORY https://github.com/glfw/glfw.git
+      GIT_TAG 3.4
+    )
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(GLFW_BUILD_DOCS OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(glfw)
+  endif()
+
+  find_package(OpenGL REQUIRED)
+
+  set(IMGUI_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external/imgui)
+  add_library(imgui STATIC
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+  )
+  target_include_directories(imgui PUBLIC ${IMGUI_DIR} ${IMGUI_DIR}/backends)
+  target_link_libraries(imgui PUBLIC glfw OpenGL::GL)
+
+  add_executable(facade_parser_gui
+    apps/facade_parser_gui/main.cpp
+    apps/facade_parser_gui/file_dialog_mac.mm
+  )
+  target_link_libraries(facade_parser_gui PRIVATE
+    facade_parser::facade_parser
+    imgui
+    "-framework Cocoa"
+    "-framework UniformTypeIdentifiers"
+  )
+elseif(FACADE_PARSER_BUILD_GUI)
+  message(STATUS "facade_parser: skipping GUI target — only implemented for macOS")
+endif()
+
 # --- Tests ----------------------------------------------------------------
 if(FACADE_PARSER_BUILD_TESTS)
   enable_testing()

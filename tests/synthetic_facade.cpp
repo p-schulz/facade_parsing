@@ -10,9 +10,17 @@ int jitterAt(const std::vector<int>& jitter, std::size_t index) {
   return (index < jitter.size()) ? jitter[index] : 0;
 }
 
+struct NarrowCellOverride {
+  int row = -1;
+  int col = -1;
+  int width_px = 0;
+  int height_px = 0;
+};
+
 SyntheticFacade makeFacadeImpl(int rows, int cols, int cell_width_px, int cell_height_px,
                                 int margin_px, const std::vector<int>& row_jitter_px,
-                                const std::vector<int>& col_jitter_px) {
+                                const std::vector<int>& col_jitter_px,
+                                const NarrowCellOverride& narrow = {}) {
   SyntheticFacade out;
 
   const int width = margin_px + cols * (cell_width_px + margin_px);
@@ -58,10 +66,17 @@ SyntheticFacade makeFacadeImpl(int rows, int cols, int cell_width_px, int cell_h
 
   for (int r = 0; r < rows; ++r) {
     for (int c = 0; c < cols; ++c) {
-      cv::rectangle(out.image,
-                    cv::Rect(col_left[static_cast<std::size_t>(c)], row_top[static_cast<std::size_t>(r)],
-                              cell_width_px, cell_height_px),
-                    cv::Scalar(60, 50, 40), cv::FILLED);
+      int w = cell_width_px;
+      int h = cell_height_px;
+      int x = col_left[static_cast<std::size_t>(c)];
+      int y = row_top[static_cast<std::size_t>(r)];
+      if (r == narrow.row && c == narrow.col) {
+        w = narrow.width_px;
+        h = narrow.height_px;
+        x += (cell_width_px - w) / 2;    // Horizontally centered in its normal slot.
+        y += cell_height_px - h;         // Bottom-aligned, like a door under a window.
+      }
+      cv::rectangle(out.image, cv::Rect(x, y, w, h), cv::Scalar(60, 50, 40), cv::FILLED);
     }
   }
 
@@ -82,6 +97,14 @@ SyntheticFacade makeJitteredFacade(int rows, int cols, int cell_width_px, int ce
   static const std::vector<int> kColJitter = {0, -2, 3, -1, 2, -3, 4, -2};
   return makeFacadeImpl(rows, cols, cell_width_px, cell_height_px, margin_px, kRowJitter,
                         kColJitter);
+}
+
+SyntheticFacade makeFacadeWithOneNarrowCell(int rows, int cols, int cell_width_px,
+                                             int cell_height_px, int margin_px, int narrow_row,
+                                             int narrow_col, int narrow_width_px,
+                                             int narrow_height_px) {
+  const NarrowCellOverride narrow{narrow_row, narrow_col, narrow_width_px, narrow_height_px};
+  return makeFacadeImpl(rows, cols, cell_width_px, cell_height_px, margin_px, {}, {}, narrow);
 }
 
 }  // namespace facade_parser::test

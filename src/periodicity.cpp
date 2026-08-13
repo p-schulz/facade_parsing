@@ -177,6 +177,45 @@ std::vector<PeriodicityPeak> directPeaks(const std::vector<float>& profile, int 
   return candidates;
 }
 
+namespace {
+
+// One attempt at building a boundary list from a single candidate
+// period: runs directPeaks with that period as the NMS distance, then
+// checks whether the resulting spacing actually agrees with it.
+struct BoundaryAttempt {
+  std::vector<int> boundaries;
+  bool low_confidence = true;
+  bool agrees = false;  ///< True once `boundaries` is non-empty and confident.
+};
+
+BoundaryAttempt tryBoundariesForPeriod(const std::vector<float>& smoothed, int n, int period,
+                                        const Config& config) {
+  BoundaryAttempt attempt;
+  const auto direct = directPeaks(smoothed, period, config);
+  if (direct.empty()) {
+    return attempt;
+  }
+
+  attempt.boundaries.push_back(0);
+  for (const auto& p : direct) {
+    attempt.boundaries.push_back(p.lag_px);
+  }
+  attempt.boundaries.push_back(n);
+
+  if (direct.size() >= 2 && period > 0) {
+    double total_spacing = 0.0;
+    for (std::size_t i = 0; i + 1 < direct.size(); ++i) {
+      total_spacing += (direct[i + 1].lag_px - direct[i].lag_px);
+    }
+    const double avg_spacing = total_spacing / static_cast<double>(direct.size() - 1);
+    attempt.low_confidence = std::abs(avg_spacing - period) > config.periodicity_agreement_tol_px;
+  }
+  attempt.agrees = !attempt.low_confidence;
+  return attempt;
+}
+
+}  // namespace
+
 PeriodicityResult analyzePeriodicity(const std::vector<float>& profile, const Config& config) {
   PeriodicityResult result;
   result.smoothed_profile = smoothProfile(profile, config);
@@ -189,35 +228,54 @@ PeriodicityResult analyzePeriodicity(const std::vector<float>& profile, const Co
   }
 
   const auto autocorr_peaks = autocorrelationPeaks(result.smoothed_profile, config);
-  const int period = autocorr_peaks.empty() ? 0 : autocorr_peaks.front().lag_px;
 
-  const auto direct = directPeaks(result.smoothed_profile, period, config);
+  // Try each autocorrelation candidate period, best-scored first,
+  // accepting the first whose direct-peak spacing actually agrees with
+  // it — rather than committing to the top-scored candidate no matter
+  // what. One strongly irregular cell in an otherwise-regular row (e.g.
+  // a door much narrower than its neighboring windows) can make a
+  // sub-harmonic of the true period score marginally higher than the
+  // true period itself, which used to make this row over-split; the
+  // true period is typically still in the candidate list, just not
+  // ranked first, so a disagreeing top candidate is worth a second try
+  // rather than an immediate low_confidence result. See docs/PLAN.md's
+  // "Known limitation" writeup.
+  BoundaryAttempt best;
+  bool have_best = false;
+  for (const auto& peak : autocorr_peaks) {
+    BoundaryAttempt attempt = tryBoundariesForPeriod(result.smoothed_profile, n, peak.lag_px, config);
+    if (attempt.boundaries.empty()) {
+      continue;
+    }
+    if (!have_best) {
+      best = attempt;
+      have_best = true;
+    }
+    if (attempt.agrees) {
+      best = attempt;
+      break;
+    }
+  }
 
-  if (direct.empty()) {
+  if (!have_best) {
+    // No autocorrelation candidate produced a usable split (or there
+    // were no candidates at all): fall back to a threshold-only direct
+    // pass, matching the original no-period behavior.
+    BoundaryAttempt attempt = tryBoundariesForPeriod(result.smoothed_profile, n, 0, config);
+    if (!attempt.boundaries.empty()) {
+      best = attempt;
+      have_best = true;
+    }
+  }
+
+  if (!have_best) {
     result.boundary_positions_px = {0, n};
     result.low_confidence = true;
     return result;
   }
 
-  std::vector<int> boundaries;
-  boundaries.push_back(0);
-  for (const auto& p : direct) {
-    boundaries.push_back(p.lag_px);
-  }
-  boundaries.push_back(n);
-
-  bool low_confidence = true;
-  if (direct.size() >= 2 && period > 0) {
-    double total_spacing = 0.0;
-    for (std::size_t i = 0; i + 1 < direct.size(); ++i) {
-      total_spacing += (direct[i + 1].lag_px - direct[i].lag_px);
-    }
-    const double avg_spacing = total_spacing / static_cast<double>(direct.size() - 1);
-    low_confidence = std::abs(avg_spacing - period) > config.periodicity_agreement_tol_px;
-  }
-
-  result.boundary_positions_px = boundaries;
-  result.low_confidence = low_confidence;
+  result.boundary_positions_px = best.boundaries;
+  result.low_confidence = best.low_confidence;
   return result;
 }
 

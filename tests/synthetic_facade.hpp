@@ -29,4 +29,19 @@ SyntheticFacade makeRegularFacade(int rows, int cols, int cell_width_px, int cel
 SyntheticFacade makeJitteredFacade(int rows, int cols, int cell_width_px, int cell_height_px,
                                     int margin_px);
 
+/// Same as makeRegularFacade, but the window at (narrow_row, narrow_col)
+/// is drawn `narrow_width_px` wide (and `narrow_height_px` tall, bottom-
+/// aligned within its bay) instead of the regular cell size — centered
+/// horizontally within its normal slot, like a door noticeably narrower
+/// than its neighboring windows. The ground-truth grid is still the
+/// *regular* grid (row/column boundaries only depend on cell pitch, not
+/// on how wide the window drawn inside one cell happens to be), so this
+/// exercises whether buildSplitGrammar recovers the correct bay count
+/// despite one strongly irregular cell — see docs/PLAN.md's "Known
+/// limitation" writeup.
+SyntheticFacade makeFacadeWithOneNarrowCell(int rows, int cols, int cell_width_px,
+                                             int cell_height_px, int margin_px, int narrow_row,
+                                             int narrow_col, int narrow_width_px,
+                                             int narrow_height_px);
+
 }  // namespace facade_parser::test

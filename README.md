@@ -128,16 +128,18 @@ literature it implements, in `docs/PLAN.md`:
   future implementation backed by a real depth/displacement map (e.g.
   from photogrammetry) can be swapped in via the `DepthHint` interface
   without touching Stage 8.
-- **A single strongly irregular cell can break a row's column split.**
-  Stage 3's per-row column detection assumes the row's bays are roughly
-  periodic; a cell substantially narrower/wider or off-center relative to
-  its neighbors (e.g. a door much narrower than the floor's windows) can
-  cause `directPeaks` to find extra spurious boundaries in that row,
-  producing the wrong column count for it. Stage 5's lattice refinement
-  only sub-pixel-corrects an already-correct boundary *count* — it can't
-  fix a wrong count. See docs/PLAN.md's "Known limitation" writeup for
-  why this is a structural consequence of the two-level split-grammar
-  design rather than a simple bug.
+- **A single strongly irregular cell used to be able to break a row's
+  column split** — now mitigated. Stage 2 (`analyzePeriodicity`) retries
+  lower-ranked autocorrelation candidates when the top-ranked one
+  disagrees with direct-peak spacing (a door much narrower than its
+  neighboring windows can otherwise make a sub-harmonic of the true
+  period score marginally higher), and Stage 3 has a secondary
+  median-width consistency pass (`Config::min_segment_width_frac_of_median`)
+  as a safety net. This is still a local heuristic, not a general fix
+  for facades with irregular rhythm throughout a row — see docs/PLAN.md's
+  "Mitigated: a single strongly irregular cell..." writeup for the full
+  story and why a complete fix would need something closer to
+  Riemenschneider et al.'s full irregular-lattice search.
 - No deep learning, pretrained models, or cloud APIs anywhere in this
   tool, by design.
 - No rectification step — input images are assumed already

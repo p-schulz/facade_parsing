@@ -163,6 +163,32 @@ struct Config {
 
   // Stage 3
   int min_cell_size_px = 24;
+  double min_segment_width_frac_of_median = 0.5;  ///< A column (bay) split
+                                                    ///< whose resulting
+                                                    ///< segment is narrower
+                                                    ///< than this fraction
+                                                    ///< of that floor band's
+                                                    ///< own median bay
+                                                    ///< width gets merged
+                                                    ///< into a neighbor.
+                                                    ///< Guards against one
+                                                    ///< strongly irregular
+                                                    ///< cell (e.g. a narrow
+                                                    ///< door) producing
+                                                    ///< spurious extra
+                                                    ///< low-activity runs
+                                                    ///< that over-split its
+                                                    ///< row. Deliberately
+                                                    ///< NOT applied to row
+                                                    ///< (floor) boundaries
+                                                    ///< — floor heights
+                                                    ///< legitimately vary
+                                                    ///< a lot on real
+                                                    ///< facades. See
+                                                    ///< docs/PLAN.md's
+                                                    ///< "Mitigated: a
+                                                    ///< single strongly
+                                                    ///< irregular cell...".
 
   // Stage 4
   double otsu_close_kernel_frac = 0.08;   ///< Fraction of cell's shorter side.
