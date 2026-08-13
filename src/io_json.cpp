@@ -40,7 +40,7 @@ const char* toString(EdgeKind kind) {
 cv::Scalar colorFor(ElementType type) {
   switch (type) {
     case ElementType::Window:
-      return {255, 128, 0};   // orange (BGR)
+      return {0, 165, 255};   // orange (BGR: B=0, G=165, R=255)
     case ElementType::Door:
       return {0, 0, 255};     // red
     case ElementType::Wall:

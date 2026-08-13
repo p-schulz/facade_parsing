@@ -42,6 +42,13 @@ default CMake search path), pass `-DOpenCV_DIR=/path/to/lib/cmake/opencvN`.
 older OpenCV keeps them in `imgproc`. The CMake configure step logs which
 variant of each was selected.
 
+The GUI (see below) additionally needs GLFW, also resolved
+system-package-first (`brew install glfw`) with a `FetchContent`
+fallback, plus the system OpenGL framework (no install needed on
+macOS). It's built automatically alongside the CLI; pass
+`-DFACADE_PARSER_BUILD_GUI=OFF` to skip it. The GUI target only exists on
+macOS — see "GUI usage" below for why.
+
 ## CLI usage
 
 ```
@@ -54,6 +61,35 @@ classified cells, edge polylines). Flags:
 
 - `--no-lattice-refine` — disable Stage 5 (irregular lattice refinement).
 - `--no-symmetry-check` — disable Stage 6 (mirror-symmetry inference).
+
+## GUI usage (macOS)
+
+```
+./build/facade_parser_gui
+```
+
+An [imgui](https://github.com/ocornut/imgui) desktop app (vendored under
+`external/imgui`, per the design choice to use it directly rather than
+fetch it) wrapping the same `facade_parser::run()` entry point the CLI
+uses — no pipeline logic is duplicated in `apps/facade_parser_gui/`.
+
+- **File > Open Image...** — native `NSOpenPanel`, filtered to
+  PNG/JPEG/BMP/TIFF. Loading an image immediately runs the full
+  pipeline and shows the debug overlay (grid lines, color-coded
+  window/door/wall boxes, edge polylines) in the main pane, scaled to
+  fit the window while preserving aspect ratio.
+- **File > Save JSON...** — native `NSSavePanel`, writes the current
+  result via the same `writeResultJson()` the CLI uses; disabled until
+  an image is loaded.
+- The status line under the menu bar reports the loaded file's size and
+  a window/door/edge count, or the last error (e.g. an unreadable
+  file), color-coded green/red.
+
+Windowing is GLFW + OpenGL3 (the standard imgui desktop backend
+pairing); the Open/Save panels are a small Objective-C++ helper
+(`apps/facade_parser_gui/file_dialog_mac.mm`), which is the reason this
+target is macOS-only for now — porting it would mean swapping in a
+different native file-dialog backend, not a pipeline change.
 
 ## Pipeline stages
 
