@@ -299,6 +299,34 @@ void saveRectifiedImage(AppState& state, const std::string& path) {
   state.status_is_error = false;
 }
 
+// Lets a user keep several named Config presets on disk (e.g. one per
+// facade material/style) and switch between them per sample, instead of
+// re-tuning sliders by hand every time. Uses the same configToJson /
+// writeConfigJson the CLI's `--config-file` and `tune --output` already
+// go through, so files are interchangeable between GUI and CLI.
+void exportConfig(AppState& state, const std::string& path) {
+  if (!facade_parser::writeConfigJson(state.config, path)) {
+    state.status = "Failed to write config: " + path;
+    state.status_is_error = true;
+    return;
+  }
+  state.status = "Saved config to " + path;
+  state.status_is_error = false;
+}
+
+void importConfig(AppState& state, const std::string& path) {
+  auto config = facade_parser::readConfigJson(path);
+  if (!config.has_value()) {
+    state.status = "Failed to read config: " + path;
+    state.status_is_error = true;
+    return;
+  }
+  state.config = *config;
+  state.status = "Loaded config from " + path;
+  state.status_is_error = false;
+  refreshPreview(state);
+}
+
 // Loads each of `paths` into a new DatasetEntry, auto-loading its
 // sidecar `<stem>.gt.json` if one already exists next to the image
 // (same convention the CLI's `tune --dataset` scan uses — see
@@ -828,6 +856,8 @@ int main() {
     bool open_dataset_requested = false;
     bool save_json_requested = false;
     bool save_rectified_requested = false;
+    bool import_config_requested = false;
+    bool export_config_requested = false;
 
     const bool can_save_rectified =
         state.has_rectified && state.viewing_dataset_index < 0;
@@ -846,6 +876,13 @@ int main() {
         }
         if (ImGui::MenuItem("Save Rectified Image...", nullptr, false, can_save_rectified)) {
           save_rectified_requested = true;
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Import Config...")) {
+          import_config_requested = true;
+        }
+        if (ImGui::MenuItem("Export Config...")) {
+          export_config_requested = true;
         }
         ImGui::EndMenu();
       }
@@ -877,6 +914,20 @@ int main() {
                                     : std::filesystem::path(state.image_path).stem().string();
       if (auto path = facade_parser::gui::saveImageDialog(stem + "_rectified.png")) {
         saveRectifiedImage(state, *path);
+      }
+    }
+    if (import_config_requested) {
+      if (auto path = facade_parser::gui::openJsonDialog()) {
+        importConfig(state, *path);
+      }
+    }
+    if (export_config_requested) {
+      const std::string stem = state.image_path.empty()
+                                    ? "config"
+                                    : std::filesystem::path(state.image_path).stem().string() +
+                                          "_config";
+      if (auto path = facade_parser::gui::saveJsonDialog(stem + ".json")) {
+        exportConfig(state, *path);
       }
     }
 

@@ -21,6 +21,11 @@ std::optional<std::string> openImageDialog();
 /// an empty vector if the user cancelled.
 std::vector<std::string> openMultipleImagesDialog();
 
+/// Shows a native "Open" panel filtered to .json files (e.g. a saved
+/// Config, for "File > Import Config..."). Returns the chosen absolute
+/// path, or nullopt if the user cancelled.
+std::optional<std::string> openJsonDialog();
+
 /// Shows a native "Save" panel for a .json file, defaulting the file
 /// name field to `suggested_name`. Returns the chosen absolute path, or
 /// nullopt if the user cancelled.
