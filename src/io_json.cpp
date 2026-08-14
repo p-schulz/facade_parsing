@@ -161,4 +161,113 @@ bool writeDebugOverlay(const cv::Mat& bgr_image, const FacadeResult& result,
   return cv::imwrite(path, renderDebugOverlay(bgr_image, result));
 }
 
+// Field-by-field, explicit (not NLOHMANN_DEFINE_TYPE_INTRUSIVE) so
+// `types.hpp` stays free of an nlohmann dependency — same separation
+// already used for FacadeResult's toJson() above.
+nlohmann::json configToJson(const Config& c) {
+  nlohmann::json j;
+  j["canny_low"] = c.canny_low;
+  j["canny_high"] = c.canny_high;
+  j["hough_min_line_length_px"] = c.hough_min_line_length_px;
+  j["hough_max_line_gap_px"] = c.hough_max_line_gap_px;
+  j["hough_threshold_votes"] = c.hough_threshold_votes;
+  j["line_angle_tolerance_deg"] = c.line_angle_tolerance_deg;
+
+  j["profile_smoothing_sigma_px"] = c.profile_smoothing_sigma_px;
+  j["periodicity_min_score"] = c.periodicity_min_score;
+  j["periodicity_agreement_tol_px"] = c.periodicity_agreement_tol_px;
+  j["direct_peak_low_activity_frac"] = c.direct_peak_low_activity_frac;
+
+  j["min_cell_size_px"] = c.min_cell_size_px;
+  j["min_segment_width_frac_of_median"] = c.min_segment_width_frac_of_median;
+
+  j["otsu_close_kernel_frac"] = c.otsu_close_kernel_frac;
+  j["window_min_fill_ratio"] = c.window_min_fill_ratio;
+  j["window_max_fill_ratio"] = c.window_max_fill_ratio;
+  j["window_min_aspect"] = c.window_min_aspect;
+  j["window_max_aspect"] = c.window_max_aspect;
+  j["door_min_height_width_ratio"] = c.door_min_height_width_ratio;
+
+  j["enable_lattice_refine"] = c.enable_lattice_refine;
+  j["lattice_refine_window_frac"] = c.lattice_refine_window_frac;
+
+  j["enable_symmetry_check"] = c.enable_symmetry_check;
+
+  j["min_edge_length_px"] = c.min_edge_length_px;
+  j["edge_claim_margin_px"] = c.edge_claim_margin_px;
+
+  j["emit_wall_elements"] = c.emit_wall_elements;
+  return j;
+}
+
+namespace {
+
+template <typename T>
+void readIfPresent(const nlohmann::json& j, const char* key, T* out) {
+  if (j.contains(key)) {
+    *out = j.at(key).get<T>();
+  }
+}
+
+}  // namespace
+
+Config configFromJson(const nlohmann::json& j) {
+  Config c;
+  readIfPresent(j, "canny_low", &c.canny_low);
+  readIfPresent(j, "canny_high", &c.canny_high);
+  readIfPresent(j, "hough_min_line_length_px", &c.hough_min_line_length_px);
+  readIfPresent(j, "hough_max_line_gap_px", &c.hough_max_line_gap_px);
+  readIfPresent(j, "hough_threshold_votes", &c.hough_threshold_votes);
+  readIfPresent(j, "line_angle_tolerance_deg", &c.line_angle_tolerance_deg);
+
+  readIfPresent(j, "profile_smoothing_sigma_px", &c.profile_smoothing_sigma_px);
+  readIfPresent(j, "periodicity_min_score", &c.periodicity_min_score);
+  readIfPresent(j, "periodicity_agreement_tol_px", &c.periodicity_agreement_tol_px);
+  readIfPresent(j, "direct_peak_low_activity_frac", &c.direct_peak_low_activity_frac);
+
+  readIfPresent(j, "min_cell_size_px", &c.min_cell_size_px);
+  readIfPresent(j, "min_segment_width_frac_of_median", &c.min_segment_width_frac_of_median);
+
+  readIfPresent(j, "otsu_close_kernel_frac", &c.otsu_close_kernel_frac);
+  readIfPresent(j, "window_min_fill_ratio", &c.window_min_fill_ratio);
+  readIfPresent(j, "window_max_fill_ratio", &c.window_max_fill_ratio);
+  readIfPresent(j, "window_min_aspect", &c.window_min_aspect);
+  readIfPresent(j, "window_max_aspect", &c.window_max_aspect);
+  readIfPresent(j, "door_min_height_width_ratio", &c.door_min_height_width_ratio);
+
+  readIfPresent(j, "enable_lattice_refine", &c.enable_lattice_refine);
+  readIfPresent(j, "lattice_refine_window_frac", &c.lattice_refine_window_frac);
+
+  readIfPresent(j, "enable_symmetry_check", &c.enable_symmetry_check);
+
+  readIfPresent(j, "min_edge_length_px", &c.min_edge_length_px);
+  readIfPresent(j, "edge_claim_margin_px", &c.edge_claim_margin_px);
+
+  readIfPresent(j, "emit_wall_elements", &c.emit_wall_elements);
+  return c;
+}
+
+bool writeConfigJson(const Config& config, const std::string& path) {
+  std::ofstream out(path);
+  if (!out) {
+    return false;
+  }
+  out << configToJson(config).dump(2);
+  return out.good();
+}
+
+std::optional<Config> readConfigJson(const std::string& path) {
+  std::ifstream in(path);
+  if (!in) {
+    return std::nullopt;
+  }
+  nlohmann::json j;
+  try {
+    in >> j;
+  } catch (const nlohmann::json::parse_error&) {
+    return std::nullopt;
+  }
+  return configFromJson(j);
+}
+
 }  // namespace facade_parser

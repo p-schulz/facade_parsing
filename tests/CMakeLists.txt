@@ -11,6 +11,10 @@ set(FACADE_PARSER_TEST_SOURCES
   test_symmetry.cpp
   test_edges_export.cpp
   test_io_json.cpp
+  test_ground_truth.cpp
+  test_evaluation.cpp
+  test_autotune.cpp
+  test_rectification.cpp
   test_end_to_end.cpp
 )
 

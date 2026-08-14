@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cstdio>
 #include <nlohmann/json.hpp>
 
 #include "facade_parser/io_json.hpp"
@@ -54,6 +55,63 @@ TEST(IoJson, ToJsonSerializesSymmetryInferences) {
   EXPECT_EQ(js.at("suggested_type").get<std::string>(), "window");
   EXPECT_EQ(js.at("suggested_bbox_px"), (nlohmann::json{100, 200, 50, 60}));
   EXPECT_FLOAT_EQ(js.at("mirror_confidence").get<float>(), 0.6F);
+}
+
+TEST(IoJson, ConfigRoundTripsThroughJson) {
+  facade_parser::Config config;
+  config.canny_low = 30.0;
+  config.canny_high = 90.0;
+  config.hough_threshold_votes = 55;
+  config.min_cell_size_px = 12;
+  config.window_min_fill_ratio = 0.2;
+  config.enable_lattice_refine = false;
+  config.emit_wall_elements = true;
+
+  const nlohmann::json j = facade_parser::configToJson(config);
+  const facade_parser::Config round_tripped = facade_parser::configFromJson(j);
+
+  EXPECT_DOUBLE_EQ(round_tripped.canny_low, 30.0);
+  EXPECT_DOUBLE_EQ(round_tripped.canny_high, 90.0);
+  EXPECT_EQ(round_tripped.hough_threshold_votes, 55);
+  EXPECT_EQ(round_tripped.min_cell_size_px, 12);
+  EXPECT_DOUBLE_EQ(round_tripped.window_min_fill_ratio, 0.2);
+  EXPECT_FALSE(round_tripped.enable_lattice_refine);
+  EXPECT_TRUE(round_tripped.emit_wall_elements);
+}
+
+// A config file missing some fields (e.g. saved by an older build with
+// fewer Config members) should keep Config{}'s own default for whatever
+// is absent, not zero-initialize it.
+TEST(IoJson, ConfigFromJsonKeepsDefaultsForMissingFields) {
+  nlohmann::json j;
+  j["canny_low"] = 10.0;  // Only one field present.
+
+  const facade_parser::Config config = facade_parser::configFromJson(j);
+  const facade_parser::Config defaults;
+
+  EXPECT_DOUBLE_EQ(config.canny_low, 10.0);
+  EXPECT_DOUBLE_EQ(config.canny_high, defaults.canny_high);
+  EXPECT_EQ(config.min_cell_size_px, defaults.min_cell_size_px);
+  EXPECT_EQ(config.enable_symmetry_check, defaults.enable_symmetry_check);
+}
+
+TEST(IoJson, WriteAndReadConfigJsonRoundTrips) {
+  facade_parser::Config config;
+  config.door_min_height_width_ratio = 2.5;
+
+  const std::string path = "/tmp/facade_parser_test_config.json";
+  ASSERT_TRUE(facade_parser::writeConfigJson(config, path));
+
+  const auto loaded = facade_parser::readConfigJson(path);
+  ASSERT_TRUE(loaded.has_value());
+  EXPECT_DOUBLE_EQ(loaded->door_min_height_width_ratio, 2.5);
+
+  std::remove(path.c_str());
+}
+
+TEST(IoJson, ReadConfigJsonReturnsNulloptForMissingFile) {
+  const auto loaded = facade_parser::readConfigJson("/tmp/facade_parser_test_does_not_exist.json");
+  EXPECT_FALSE(loaded.has_value());
 }
 
 TEST(IoJson, RenderDebugOverlayPreservesImageSize) {

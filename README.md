@@ -9,8 +9,14 @@ computer vision. See `docs/PLAN.md` for the full design rationale and
 
 **Status: all 8 stages implemented**, each with unit tests backed by
 procedurally-generated synthetic facades with known ground truth (see
-`tests/synthetic_facade.hpp` and `docs/PLAN.md`'s testing strategy). See
-"Known limitations" below for what's still rough at the edges.
+`tests/synthetic_facade.hpp` and `docs/PLAN.md`'s testing strategy).
+There's also an auto-tuning pipeline (`ground_truth.hpp`,
+`evaluation.hpp`, `autotune.hpp`; the CLI's `tune` subcommand; the GUI's
+Dataset panel) for searching `Config`'s ~20 tunable thresholds against
+hand-drawn annotations on real photos instead of guessing — see "Dataset
+mode" under GUI usage, and `docs/PLAN.md`'s "Auto-tuning pipeline"
+section. See "Known limitations" below for what's still rough at the
+edges.
 
 ## Build
 
@@ -57,10 +63,38 @@ macOS — see "GUI usage" below for why.
 
 Writes `out/facade.json` (schema: `docs/OUTPUT_FORMAT.md`) and
 `out/facade_overlay.png` (debug visualization: grid lines, color-coded
-classified cells, edge polylines). Flags:
+classified cells, edge polylines). Every `Config` field (see
+`include/facade_parser/types.hpp`) is exposed as a flag, grouped by
+pipeline stage — run `--help` for the full list, e.g.
+`--canny-low`, `--window-min-fill-ratio`, `--no-lattice-refine`
+(disables Stage 5), `--no-symmetry-check` (disables Stage 6).
 
-- `--no-lattice-refine` — disable Stage 5 (irregular lattice refinement).
-- `--no-symmetry-check` — disable Stage 6 (mirror-symmetry inference).
+`--config-file <path>` loads a `Config` saved as JSON (e.g. by `tune`,
+below) as the baseline *before* any other flags are applied — an
+individually-passed flag always overrides the file, but an unspecified
+one keeps the file's value instead of the compiled-in default:
+
+```
+./build/facade_parser_cli --input facade.png --config-file tuned_config.json --output ./out
+```
+
+### `tune` subcommand (auto-tuning pipeline)
+
+```
+./build/facade_parser_cli tune --dataset ./my_dataset --output tuned_config.json
+```
+
+Searches `Config`'s parameter space (deterministic coordinate descent —
+see `docs/PLAN.md`, "Auto-tuning pipeline") for the values that best
+match hand-drawn ground-truth annotations, scanning `--dataset` for
+`*.gt.json` sidecar files (schema: `docs/OUTPUT_FORMAT.md`) — the same
+files the GUI's annotation tool writes (below); each resolves its own
+image relative to its own directory. Prints live progress to stdout
+(this can take minutes on a non-trivial dataset — see the performance
+note in `docs/PLAN.md`) and writes the best `Config` found as JSON.
+`--iterations N` (default 6) caps coordinate-descent sweeps per starting
+config; `--iou-threshold` (default 0.5) sets the minimum IoU to count a
+detection as matching an annotation.
 
 ## GUI usage (macOS)
 
@@ -74,22 +108,90 @@ fetch it) wrapping the same `facade_parser::run()` entry point the CLI
 uses — no pipeline logic is duplicated in `apps/facade_parser_gui/`.
 
 - **File > Open Image...** — native `NSOpenPanel`, filtered to
-  PNG/JPEG/BMP/TIFF. Loading an image immediately runs the full
-  pipeline and shows the debug overlay (grid lines, color-coded
-  window/door/wall boxes, edge polylines) in the main pane, scaled to
-  fit the window while preserving aspect ratio.
+  PNG/JPEG/BMP/TIFF. Loading an image proposes four facade corners
+  automatically (see "Rectification" below), then immediately runs the
+  full pipeline on the raw image and shows the debug overlay (grid
+  lines, color-coded window/door/wall boxes, edge polylines) in the main
+  pane, scaled to fit the window while preserving aspect ratio.
 - **File > Save JSON...** — native `NSSavePanel`, writes the current
   result via the same `writeResultJson()` the CLI uses; disabled until
   an image is loaded.
+- **Tuning panel** (middle column) — every `Config` field, grouped by
+  stage, as sliders/checkboxes with a "Reset to defaults" button. Edits
+  re-run the pipeline on whatever's currently shown (single image or
+  the selected dataset photo) once you release the slider.
 - The status line under the menu bar reports the loaded file's size and
-  a window/door/edge count, or the last error (e.g. an unreadable
-  file), color-coded green/red.
+  a window/door/edge count (or dataset image's annotation/score
+  summary), or the last error (e.g. an unreadable file), color-coded
+  green/red.
 
 Windowing is GLFW + OpenGL3 (the standard imgui desktop backend
 pairing); the Open/Save panels are a small Objective-C++ helper
 (`apps/facade_parser_gui/file_dialog_mac.mm`), which is the reason this
 target is macOS-only for now — porting it would mean swapping in a
 different native file-dialog backend, not a pipeline change.
+
+### Rectification (perspective correction)
+
+Real facade photos have keystone distortion; Stage 1-4 detection works
+much better once the facade plane is fronto-parallel and axis-aligned.
+This is Preview-mode only (not Dataset mode) — see `docs/PLAN.md`,
+"Stage 0: Rectification", for the full design writeup, including why
+it's deliberately **not** metric-accurate (only right angles matter;
+real-world scale comes from an external GIS pipeline applied
+downstream).
+
+- A **"Corners" / "Result" toggle** above the preview switches between
+  the raw photo (with the four draggable corner handles) and whatever
+  `facade_parser::run()` last produced (raw-image detection until you
+  rectify, then the rectified one).
+- On load, four corners are proposed automatically by reusing Stage 1's
+  own line detector (wider angle tolerance, since an unrectified
+  photo's edges aren't axis-aligned yet) and picking each side's
+  longest candidate edge; falls back to a centered inset rectangle if
+  fewer than four are found. Drag a handle to correct it (clamped to
+  the image bounds); **Reset to detected corners** restores the
+  automatic proposal.
+- **Rectify** warps the facade quad onto an axis-aligned rectangle
+  (`cv::getPerspectiveTransform` + `cv::warpPerspective`) and switches
+  to the "Result" view showing the plain warp. It's cached until you
+  click Rectify again (e.g. after adjusting a corner) or load a new
+  image.
+- **Detect Features** calls the same, unmodified
+  `facade_parser::run()` the CLI uses, on the rectified image once one
+  exists (raw image otherwise — detection works either way, rectifying
+  first just tends to improve it). Tuning-panel slider edits do the
+  same automatically once a rectified image exists, so you don't have
+  to keep re-clicking it while tuning.
+
+### Dataset mode: annotation + auto-tuning
+
+- **File > Open Dataset...** — native multi-select `NSOpenPanel`. Each
+  chosen photo is added to the left "Dataset" column, auto-loading its
+  sidecar `<stem>.gt.json` if one already exists next to it (schema:
+  `docs/OUTPUT_FORMAT.md`). Click an entry in the list to view it.
+- **Annotate mode** — drag on the image to draw a box of the selected
+  type (Window/Door radio buttons); right-click an existing box for a
+  "Delete" / "Change type" context menu. **Save Annotations** writes the
+  sidecar `.gt.json`; an "(unsaved)" marker shows when there are pending
+  edits.
+- **Show live detections (comparison)** — overlays the current
+  Config's detections against the annotations: green = matched, red =
+  unmatched detection, yellow = unmatched annotation. Off, it just shows
+  the annotations themselves (still yellow — no live pipeline run
+  needed).
+- **Run Auto-Tune** — searches for the `Config` that best matches every
+  annotated dataset photo (deterministic coordinate descent, no RNG —
+  see `docs/PLAN.md`, "Auto-tuning pipeline"), on a background thread so
+  the UI stays responsive; shows a live trial count and best-score
+  readout with a **Cancel** button. When done, **Apply Tuned Config**
+  loads the result into the tuning panel for review (not applied
+  automatically — you decide whether it's actually better) or
+  **Discard** it.
+
+This can take a while on a real dataset (a full sweep is easily
+thousands of pipeline evaluations) — that's why progress and
+cancellation are front and center rather than a blocking spinner.
 
 ## Pipeline stages
 

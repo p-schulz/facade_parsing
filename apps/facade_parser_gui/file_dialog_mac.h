@@ -8,12 +8,18 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace facade_parser::gui {
 
 /// Shows a native "Open" panel filtered to common raster image types.
 /// Returns the chosen absolute path, or nullopt if the user cancelled.
 std::optional<std::string> openImageDialog();
+
+/// Same as openImageDialog(), but allows selecting several files at once
+/// (for "File > Open Dataset..."). Returns the chosen absolute paths, or
+/// an empty vector if the user cancelled.
+std::vector<std::string> openMultipleImagesDialog();
 
 /// Shows a native "Save" panel for a .json file, defaulting the file
 /// name field to `suggested_name`. Returns the chosen absolute path, or

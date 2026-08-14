@@ -8,6 +8,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 #include <opencv2/core.hpp>
+#include <optional>
 #include <string>
 
 #include "facade_parser/types.hpp"
@@ -29,5 +30,23 @@ cv::Mat renderDebugOverlay(const cv::Mat& bgr_image, const FacadeResult& result)
 /// `path`. Returns false on I/O failure.
 bool writeDebugOverlay(const cv::Mat& bgr_image, const FacadeResult& result,
                         const std::string& path);
+
+/// Serializes every `Config` field to JSON (flat object, field names
+/// match the struct member names). Used by the CLI's `tune` subcommand
+/// and the GUI's auto-tuner to persist/reload a tuned config — see
+/// docs/PLAN.md, "Auto-tuning pipeline".
+nlohmann::json configToJson(const Config& config);
+
+/// Reads back a `Config` produced by `configToJson`. Fields absent from
+/// `j` keep `Config{}`'s own default (so an older/partial config file
+/// still loads cleanly against a newer `Config` with more fields).
+Config configFromJson(const nlohmann::json& j);
+
+/// Writes `configToJson(config)` to `path`. Returns false on I/O failure.
+bool writeConfigJson(const Config& config, const std::string& path);
+
+/// Reads a `Config` from `path`. Returns nullopt on I/O failure or
+/// malformed JSON.
+std::optional<Config> readConfigJson(const std::string& path);
 
 }  // namespace facade_parser

@@ -26,6 +26,28 @@ std::optional<std::string> openImageDialog() {
   }
 }
 
+std::vector<std::string> openMultipleImagesDialog() {
+  @autoreleasepool {
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.canChooseFiles = YES;
+    panel.canChooseDirectories = NO;
+    panel.allowsMultipleSelection = YES;
+    panel.allowedContentTypes = @[
+      UTTypePNG, UTTypeJPEG, UTTypeBMP, UTTypeTIFF
+    ];
+
+    [NSApp activateIgnoringOtherApps:YES];
+
+    std::vector<std::string> paths;
+    if ([panel runModal] == NSModalResponseOK) {
+      for (NSURL* url in panel.URLs) {
+        paths.push_back(std::string(url.path.UTF8String));
+      }
+    }
+    return paths;
+  }
+}
+
 std::optional<std::string> saveJsonDialog(const std::string& suggested_name) {
   @autoreleasepool {
     NSSavePanel* panel = [NSSavePanel savePanel];

@@ -88,6 +88,10 @@ add_library(facade_parser
   src/edges_export.cpp
   src/io_json.cpp
   src/pipeline.cpp
+  src/ground_truth.cpp
+  src/evaluation.cpp
+  src/autotune.cpp
+  src/rectification.cpp
 )
 add_library(facade_parser::facade_parser ALIAS facade_parser)
 
