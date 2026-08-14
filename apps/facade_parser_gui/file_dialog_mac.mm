@@ -63,4 +63,19 @@ std::optional<std::string> saveJsonDialog(const std::string& suggested_name) {
   }
 }
 
+std::optional<std::string> saveImageDialog(const std::string& suggested_name) {
+  @autoreleasepool {
+    NSSavePanel* panel = [NSSavePanel savePanel];
+    panel.allowedContentTypes = @[ UTTypePNG ];
+    panel.nameFieldStringValue = [NSString stringWithUTF8String:suggested_name.c_str()];
+
+    [NSApp activateIgnoringOtherApps:YES];
+
+    if ([panel runModal] == NSModalResponseOK && panel.URL != nil) {
+      return std::string(panel.URL.path.UTF8String);
+    }
+    return std::nullopt;
+  }
+}
+
 }  // namespace facade_parser::gui

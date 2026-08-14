@@ -143,6 +143,16 @@ struct AppState {
   int right_clicked_annotation_index = -1;
 
   std::unique_ptr<TuneWorker> tune_worker;
+
+  // Resizable layout: pixel sizes of the "primary" side of each
+  // splitter (see the `verticalSplitter`/`horizontalSplitter` helpers
+  // below), persisted across frames so drags accumulate. Not saved to
+  // disk (imgui.ini is disabled — see main()) — resets to these
+  // defaults each launch.
+  float tuning_panel_width = 380.0F;      // Outer split: main area | tuning panel.
+  float preview_panel_height = 480.0F;    // Main area split: preview | dataset (bottom).
+  float dataset_list_width = 260.0F;      // Dataset split: image list | annotate | auto-tune.
+  float dataset_annotate_width = 320.0F;
 };
 
 // --- Rendering / pipeline glue -----------------------------------------
@@ -276,6 +286,16 @@ void saveJson(AppState& state, const std::string& path) {
     return;
   }
   state.status = "Saved JSON to " + path;
+  state.status_is_error = false;
+}
+
+void saveRectifiedImage(AppState& state, const std::string& path) {
+  if (!cv::imwrite(path, state.rectified_bgr)) {
+    state.status = "Failed to write rectified image: " + path;
+    state.status_is_error = true;
+    return;
+  }
+  state.status = "Saved rectified image to " + path;
   state.status_is_error = false;
 }
 
@@ -457,6 +477,53 @@ void glfwErrorCallback(int error, const char* description) {
   std::fprintf(stderr, "GLFW error %d: %s\n", error, description);
 }
 
+// --- Resizable panel splitters -------------------------------------------
+// Minimal self-contained drag handles, deliberately not using imgui's
+// docking system (left off — see docs/PLAN.md's GUI section) or
+// imgui_internal.h's SplitterBehavior (which would need a new include of
+// imgui's non-public API): a thin ImGui::InvisibleButton tracks
+// IsItemActive() + the frame's mouse delta to adjust the caller's stored
+// "primary side" size, clamped so neither side can be dragged below its
+// minimum. The caller is responsible for the ImGui::SameLine() calls
+// around each one (see main()) — keeps these two functions simple and
+// orientation-agnostic rather than hiding layout control flow in here.
+
+// `tracked_width` is the size of whichever side the caller stores in
+// AppState — usually the side to the left of the splitter (dragging
+// right grows it), but e.g. the TuningPanel splitter tracks the panel
+// to its *right*, which shrinks as the mouse moves right, hence
+// `tracked_is_left_side`.
+void verticalSplitter(const char* str_id, float thickness, float* tracked_width, float min_tracked,
+                       float min_other, float total_width, bool tracked_is_left_side = true) {
+  ImGui::PushID(str_id);
+  ImGui::InvisibleButton("##vsplit", ImVec2(thickness, -1));
+  if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+  }
+  if (ImGui::IsItemActive()) {
+    const float delta = ImGui::GetIO().MouseDelta.x;
+    *tracked_width += tracked_is_left_side ? delta : -delta;
+  }
+  const float max_tracked = total_width - min_other - thickness;
+  *tracked_width = std::clamp(*tracked_width, min_tracked, std::max(min_tracked, max_tracked));
+  ImGui::PopID();
+}
+
+void horizontalSplitter(const char* str_id, float thickness, float* top_height, float min_top,
+                         float min_bottom, float total_height) {
+  ImGui::PushID(str_id);
+  ImGui::InvisibleButton("##hsplit", ImVec2(-1, thickness));
+  if (ImGui::IsItemHovered() || ImGui::IsItemActive()) {
+    ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+  }
+  if (ImGui::IsItemActive()) {
+    *top_height += ImGui::GetIO().MouseDelta.y;
+  }
+  const float max_top = total_height - min_bottom - thickness;
+  *top_height = std::clamp(*top_height, min_top, std::max(min_top, max_top));
+  ImGui::PopID();
+}
+
 // "(?)" marker that shows `desc` in a tooltip on hover — used to surface
 // the same per-parameter explanations that live as comments on `Config`
 // in types.hpp, without cluttering the panel with wrapped body text.
@@ -624,14 +691,8 @@ void drawAutoTunePanel(AppState& state) {
   }
 }
 
-void drawDatasetPanel(AppState& state) {
-  if (state.dataset.empty()) {
-    ImGui::TextDisabled("File > Open Dataset... to load photos for annotation and tuning.");
-    return;
-  }
-
+void drawDatasetImageList(AppState& state) {
   ImGui::Text("%zu image(s) loaded", state.dataset.size());
-  ImGui::BeginChild("DatasetList", ImVec2(0, 220), ImGuiChildFlags_Borders);
   for (int i = 0; i < static_cast<int>(state.dataset.size()); ++i) {
     const auto& entry = state.dataset[static_cast<std::size_t>(i)];
     std::string label = std::filesystem::path(entry.image_path).filename().string();
@@ -647,14 +708,15 @@ void drawDatasetPanel(AppState& state) {
       refreshDatasetPreview(state);
     }
   }
-  ImGui::EndChild();
+}
 
+void drawDatasetAnnotateOptions(AppState& state) {
   if (state.viewing_dataset_index < 0) {
+    ImGui::TextDisabled("Select an image from the list to annotate it.");
     return;
   }
   DatasetEntry& entry = state.dataset[static_cast<std::size_t>(state.viewing_dataset_index)];
 
-  ImGui::Spacing();
   ImGui::SeparatorText("Annotate");
 
   int type_int = static_cast<int>(state.annotate_type);
@@ -679,9 +741,44 @@ void drawDatasetPanel(AppState& state) {
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(1.0F, 0.8F, 0.3F, 1.0F), "(unsaved)");
   }
+}
 
-  ImGui::Spacing();
+// Bottom "dataset" area: three side-by-side, independently resizable
+// sub-panels (image list | annotate options | auto-tune), split with the
+// same verticalSplitter() used for the outer main-area/tuning-panel
+// split above.
+void drawDatasetPanel(AppState& state) {
+  if (state.dataset.empty()) {
+    ImGui::TextDisabled("File > Open Dataset... to load photos for annotation and tuning.");
+    return;
+  }
+
+  constexpr float kSplitterThickness = 6.0F;
+  const float total_width = ImGui::GetContentRegionAvail().x;
+
+  ImGui::BeginChild("DatasetImageList", ImVec2(state.dataset_list_width, 0),
+                     ImGuiChildFlags_Borders);
+  drawDatasetImageList(state);
+  ImGui::EndChild();
+
+  ImGui::SameLine();
+  verticalSplitter("DatasetListSplit", kSplitterThickness, &state.dataset_list_width, 150.0F,
+                    150.0F, total_width);
+  ImGui::SameLine();
+
+  ImGui::BeginChild("DatasetAnnotate", ImVec2(state.dataset_annotate_width, 0),
+                     ImGuiChildFlags_Borders);
+  drawDatasetAnnotateOptions(state);
+  ImGui::EndChild();
+
+  ImGui::SameLine();
+  verticalSplitter("DatasetAnnotateSplit", kSplitterThickness, &state.dataset_annotate_width,
+                    200.0F, 200.0F, total_width - state.dataset_list_width - kSplitterThickness);
+  ImGui::SameLine();
+
+  ImGui::BeginChild("DatasetAutoTune", ImVec2(0, 0), ImGuiChildFlags_Borders);
   drawAutoTunePanel(state);
+  ImGui::EndChild();
 }
 
 }  // namespace
@@ -730,6 +827,10 @@ int main() {
     bool open_image_requested = false;
     bool open_dataset_requested = false;
     bool save_json_requested = false;
+    bool save_rectified_requested = false;
+
+    const bool can_save_rectified =
+        state.has_rectified && state.viewing_dataset_index < 0;
 
     if (ImGui::BeginMainMenuBar()) {
       if (ImGui::BeginMenu("File")) {
@@ -742,6 +843,9 @@ int main() {
         ImGui::Separator();
         if (ImGui::MenuItem("Save JSON...", "Cmd+S", false, state.has_image)) {
           save_json_requested = true;
+        }
+        if (ImGui::MenuItem("Save Rectified Image...", nullptr, false, can_save_rectified)) {
+          save_rectified_requested = true;
         }
         ImGui::EndMenu();
       }
@@ -767,6 +871,14 @@ int main() {
         saveJson(state, *path);
       }
     }
+    if (save_rectified_requested) {
+      const std::string stem = state.image_path.empty()
+                                    ? "facade"
+                                    : std::filesystem::path(state.image_path).stem().string();
+      if (auto path = facade_parser::gui::saveImageDialog(stem + "_rectified.png")) {
+        saveRectifiedImage(state, *path);
+      }
+    }
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const float menu_bar_height = ImGui::GetFrameHeight();
@@ -785,25 +897,20 @@ int main() {
       ImGui::Separator();
     }
 
-    constexpr float kDatasetPanelWidth = 260.0F;
-    constexpr float kTuningPanelWidth = 380.0F;
+    // Overall layout: [MainArea (Preview on top / Dataset on bottom) |
+    // splitter | TuningPanel (right, full height)], with a second
+    // splitter between MainArea's two rows. Every size lives in
+    // AppState so drags accumulate across frames — see the fields'
+    // doc comment there.
+    constexpr float kSplitterThickness = 6.0F;
+    const ImVec2 main_avail = ImGui::GetContentRegionAvail();
 
-    ImGui::BeginChild("DatasetPanel", ImVec2(kDatasetPanelWidth, 0), ImGuiChildFlags_Borders);
-    drawDatasetPanel(state);
-    ImGui::EndChild();
+    ImGui::BeginChild("MainArea",
+                       ImVec2(main_avail.x - state.tuning_panel_width - kSplitterThickness, 0));
+    const float main_area_height = ImGui::GetContentRegionAvail().y;
 
-    ImGui::SameLine();
-
-    ImGui::BeginChild("TuningPanel", ImVec2(kTuningPanelWidth, 0), ImGuiChildFlags_Borders);
-    const bool config_changed = drawTuningPanel(state.config);
-    if (config_changed) {
-      refreshPreview(state);
-    }
-    ImGui::EndChild();
-
-    ImGui::SameLine();
-
-    ImGui::BeginChild("PreviewPanel", ImVec2(0, 0), ImGuiChildFlags_Borders);
+    ImGui::BeginChild("PreviewPanel", ImVec2(0, state.preview_panel_height),
+                       ImGuiChildFlags_Borders);
     if (state.has_image) {
       const bool in_dataset_mode = state.viewing_dataset_index >= 0;
 
@@ -993,6 +1100,27 @@ int main() {
       ImGui::TextDisabled(
           "File > Open Image... for a single preview, or File > Open Dataset... to annotate and "
           "auto-tune against several photos.");
+    }
+    ImGui::EndChild();  // PreviewPanel
+
+    horizontalSplitter("MainAreaSplit", kSplitterThickness, &state.preview_panel_height, 200.0F,
+                        150.0F, main_area_height);
+
+    ImGui::BeginChild("DatasetPanel", ImVec2(0, 0), ImGuiChildFlags_Borders);
+    drawDatasetPanel(state);
+    ImGui::EndChild();
+
+    ImGui::EndChild();  // MainArea
+
+    ImGui::SameLine();
+    verticalSplitter("TuningPanelSplit", kSplitterThickness, &state.tuning_panel_width, 260.0F,
+                      300.0F, main_avail.x, /*tracked_is_left_side=*/false);
+    ImGui::SameLine();
+
+    ImGui::BeginChild("TuningPanel", ImVec2(state.tuning_panel_width, 0), ImGuiChildFlags_Borders);
+    const bool config_changed = drawTuningPanel(state.config);
+    if (config_changed) {
+      refreshPreview(state);
     }
     ImGui::EndChild();
 

@@ -26,4 +26,9 @@ std::vector<std::string> openMultipleImagesDialog();
 /// nullopt if the user cancelled.
 std::optional<std::string> saveJsonDialog(const std::string& suggested_name);
 
+/// Shows a native "Save" panel for a .png file (e.g. the rectified
+/// image), defaulting the file name field to `suggested_name`. Returns
+/// the chosen absolute path, or nullopt if the user cancelled.
+std::optional<std::string> saveImageDialog(const std::string& suggested_name);
+
 }  // namespace facade_parser::gui

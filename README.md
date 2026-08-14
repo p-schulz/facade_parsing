@@ -116,10 +116,23 @@ uses — no pipeline logic is duplicated in `apps/facade_parser_gui/`.
 - **File > Save JSON...** — native `NSSavePanel`, writes the current
   result via the same `writeResultJson()` the CLI uses; disabled until
   an image is loaded.
-- **Tuning panel** (middle column) — every `Config` field, grouped by
-  stage, as sliders/checkboxes with a "Reset to defaults" button. Edits
-  re-run the pipeline on whatever's currently shown (single image or
-  the selected dataset photo) once you release the slider.
+- **File > Save Rectified Image...** — native `NSSavePanel` (PNG),
+  writes the current `rectified_bgr` plain warp to disk; disabled until
+  you've rectified an image in Preview mode (see "Rectification"
+  below) — it's a raw pixel dump, not the JSON result, useful for
+  feeding the warped photo into another tool.
+- **Tuning panel** (right column, full window height) — every `Config`
+  field, grouped by stage, as sliders/checkboxes with a "Reset to
+  defaults" button. Edits re-run the pipeline on whatever's currently
+  shown (single image or the selected dataset photo) once you release
+  the slider.
+- **Layout is resizable** — every panel boundary (Preview/Dataset split
+  at the bottom of the main area, the three Dataset sub-panels, and the
+  Tuning panel's left edge) is a drag handle: hover it for a resize
+  cursor, drag to resize. Sizes reset to their defaults on relaunch —
+  imgui's own `imgui.ini` layout persistence is deliberately disabled
+  (see `apps/facade_parser_gui/main.cpp`'s `main()`), so nothing is
+  written to disk.
 - The status line under the menu bar reports the loaded file's size and
   a window/door/edge count (or dataset image's annotation/score
   summary), or the last error (e.g. an unreadable file), color-coded
@@ -156,7 +169,8 @@ downstream).
   (`cv::getPerspectiveTransform` + `cv::warpPerspective`) and switches
   to the "Result" view showing the plain warp. It's cached until you
   click Rectify again (e.g. after adjusting a corner) or load a new
-  image.
+  image. Once rectified, **File > Save Rectified Image...** writes that
+  warp to a PNG.
 - **Detect Features** calls the same, unmodified
   `facade_parser::run()` the CLI uses, on the rectified image once one
   exists (raw image otherwise — detection works either way, rectifying
@@ -166,8 +180,13 @@ downstream).
 
 ### Dataset mode: annotation + auto-tuning
 
+The Dataset panel spans the bottom of the main area (below the Preview
+panel, full width up to the Tuning panel), split into three resizable
+sub-columns: **image list** (left), **annotate options** (middle), and
+**auto-tune** (right) — drag either divider between them to resize.
+
 - **File > Open Dataset...** — native multi-select `NSOpenPanel`. Each
-  chosen photo is added to the left "Dataset" column, auto-loading its
+  chosen photo is added to the image list sub-column, auto-loading its
   sidecar `<stem>.gt.json` if one already exists next to it (schema:
   `docs/OUTPUT_FORMAT.md`). Click an entry in the list to view it.
 - **Annotate mode** — drag on the image to draw a box of the selected
