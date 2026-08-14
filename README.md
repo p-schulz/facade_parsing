@@ -121,6 +121,19 @@ uses — no pipeline logic is duplicated in `apps/facade_parser_gui/`.
   you've rectified an image in Preview mode (see "Rectification"
   below) — it's a raw pixel dump, not the JSON result, useful for
   feeding the warped photo into another tool.
+- **File > Import Config... / Export Config...** — load or save the
+  Tuning panel's entire `Config` as a `.json` file, via the same
+  `configToJson`/`configFromJson`/`readConfigJson`/`writeConfigJson`
+  the CLI's `--config-file` flag and `tune --output` already use, so
+  files are interchangeable between GUI and CLI. This is how you keep
+  several tuned presets around — e.g. one per facade material or photo
+  style — and switch between them per sample instead of re-tuning every
+  slider by hand each time: tune against one photo, Export Config,
+  switch to a different sample, Import a different preset (or the same
+  one to compare). Import replaces the whole `Config` and immediately
+  re-runs the pipeline on whatever's currently shown; Export always
+  saves the Tuning panel's current values, regardless of whether
+  they've been applied to the loaded image yet.
 - **Tuning panel** (right column, full window height) — every `Config`
   field, grouped by stage, as sliders/checkboxes with a "Reset to
   defaults" button. Edits re-run the pipeline on whatever's currently
