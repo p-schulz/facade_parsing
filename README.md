@@ -4,19 +4,8 @@ Standalone, offline C++ library + CLI that analyzes a single rectified
 building-facade photo and extracts a structured grid of floors,
 window/pier bays, windows, doors, and prominent horizontal/vertical edges
 (cornices, ledges, string courses) using classical (non-deep-learning)
-computer vision. See `docs/PLAN.md` for the full design rationale and
-`docs/OUTPUT_FORMAT.md` for the JSON schema.
+computer vision.
 
-**Status: all 8 stages implemented**, each with unit tests backed by
-procedurally-generated synthetic facades with known ground truth (see
-`tests/synthetic_facade.hpp` and `docs/PLAN.md`'s testing strategy).
-There's also an auto-tuning pipeline (`ground_truth.hpp`,
-`evaluation.hpp`, `autotune.hpp`; the CLI's `tune` subcommand; the GUI's
-Dataset panel) for searching `Config`'s ~20 tunable thresholds against
-hand-drawn annotations on real photos instead of guessing — see "Dataset
-mode" under GUI usage, and `docs/PLAN.md`'s "Auto-tuning pipeline"
-section. See "Known limitations" below for what's still rough at the
-edges.
 
 ## Build
 
@@ -103,8 +92,7 @@ detection as matching an annotation.
 ```
 
 An [imgui](https://github.com/ocornut/imgui) desktop app (vendored under
-`external/imgui`, per the design choice to use it directly rather than
-fetch it) wrapping the same `facade_parser::run()` entry point the CLI
+`external/imgui`) wrapping the same `facade_parser::run()` entry point the CLI
 uses — no pipeline logic is duplicated in `apps/facade_parser_gui/`.
 
 - **File > Open Image...** — native `NSOpenPanel`, filtered to
@@ -224,33 +212,6 @@ sub-columns: **image list** (left), **annotate options** (middle), and
 This can take a while on a real dataset (a full sweep is easily
 thousands of pipeline evaluations) — that's why progress and
 cancellation are front and center rather than a blocking spinner.
-
-## Pipeline stages
-
-Each stage is documented in detail, with its OpenCV API choices and the
-literature it implements, in `docs/PLAN.md`:
-
-1. **Edge and line extraction** (`edges.hpp`) — Canny, Sobel gradient
-   magnitude, near-horizontal/vertical line segments.
-2. **Periodicity / grid detection** (`periodicity.hpp`) — projection
-   profiles, DFT-based autocorrelation (Wiener–Khinchin), NMS peak
-   picking.
-3. **Split-grammar segmentation** (`grammar.hpp`) — recursive
-   floor-split then tile-split (Müller et al., SIGGRAPH 2007),
-   flattened into a `FacadeGrid`.
-4. **Cell classification** (`classification.hpp`) — Otsu threshold,
-   contrast/edge-density features, contour/rect fit, window/door/wall
-   decision with confidence.
-5. **Irregular lattice refinement** (`lattice_refine.hpp`, optional) —
-   per-boundary local snapping (Riemenschneider et al., CVPR 2012).
-6. **Symmetry check** (`symmetry.hpp`, optional) — mirror-axis estimate
-   via `cv::phaseCorrelate`, flags occluded cells whose mirrored
-   counterpart was detected.
-7. **Edge/ledge/projection extraction** (`edges_export.hpp`) — emits
-   unclaimed long line segments as `edge` elements; ships a
-   `DepthHint` interface with a default low-confidence gradient-magnitude
-   proxy (see Known limitations).
-8. **Export** (`io_json.hpp`) — JSON serialization + debug overlay PNG.
 
 ## Known limitations
 
